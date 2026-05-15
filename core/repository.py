@@ -89,12 +89,15 @@ class JobRepository:
             self._conn.commit()
             return Job.model_validate(dict(cur.fetchone()))
 
-    def reschedule(self, job_id: uuid.UUID, run_at: datetime) -> None:
+    def reschedule(
+        self, job_id: uuid.UUID, run_at: datetime, error: str | None = None
+    ) -> None:
         """Push run_at forward for a delayed retry and set status back to pending."""
         with self._conn.cursor() as cur:
             cur.execute(
-                "UPDATE jobs SET status = 'pending', run_at = %s WHERE id = %s",
-                (run_at, job_id),
+                """UPDATE jobs SET status = 'pending', run_at = %s,
+                   error = COALESCE(%s, error) WHERE id = %s""",
+                (run_at, error, job_id),
             )
             self._conn.commit()
 
