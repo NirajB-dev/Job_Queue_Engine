@@ -7,7 +7,7 @@ from typing import Any
 import psycopg2
 import psycopg2.extras
 
-from core.models import CreateJobRequest, Job, JobAttempt, JobStatus, Priority
+from core.models import CreateJobRequest, Job, JobAttempt, Priority
 
 psycopg2.extras.register_uuid()
 
