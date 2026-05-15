@@ -1,0 +1,35 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: scheduler
+  namespace: job-queue
+  labels:
+    app: scheduler
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: scheduler
+  template:
+    metadata:
+      labels:
+        app: scheduler
+    spec:
+      serviceAccountName: job-queue-ksa
+      containers:
+        - name: scheduler
+          image: us-central1-docker.pkg.dev/job-queue-engine/job-queue-images/worker:IMAGE_TAG
+          command: ["python", "-m", "scheduler.scheduler"]
+          envFrom:
+            - secretRef:
+                name: job-queue-secrets
+          env:
+            - name: ENVIRONMENT
+              value: production
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "256Mi"
+            limits:
+              cpu: "250m"
+              memory: "256Mi"

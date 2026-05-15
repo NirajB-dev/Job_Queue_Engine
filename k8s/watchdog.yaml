@@ -1,0 +1,35 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: watchdog
+  namespace: job-queue
+  labels:
+    app: watchdog
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: watchdog
+  template:
+    metadata:
+      labels:
+        app: watchdog
+    spec:
+      serviceAccountName: job-queue-ksa
+      containers:
+        - name: watchdog
+          image: us-central1-docker.pkg.dev/job-queue-engine/job-queue-images/worker:IMAGE_TAG
+          command: ["python", "-m", "watchdog.watchdog"]
+          envFrom:
+            - secretRef:
+                name: job-queue-secrets
+          env:
+            - name: ENVIRONMENT
+              value: production
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "256Mi"
+            limits:
+              cpu: "250m"
+              memory: "256Mi"
