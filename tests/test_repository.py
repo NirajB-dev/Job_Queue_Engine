@@ -20,6 +20,7 @@ def conn():
 @pytest.fixture(autouse=True)
 def clean_tables(conn):
     yield
+    conn.rollback()  # reset any aborted transaction left by error-path tests
     with conn.cursor() as cur:
         cur.execute("DELETE FROM job_attempts")
         cur.execute("DELETE FROM jobs")

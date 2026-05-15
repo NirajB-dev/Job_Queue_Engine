@@ -24,28 +24,32 @@ class JobRepository:
 
     def create(self, req: CreateJobRequest) -> Job:
         run_at = req.run_at or _utcnow()
-        with self._conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-            cur.execute(
-                """
-                INSERT INTO jobs
-                    (type, payload, priority, max_attempts, idempotency_key,
-                     scheduled_at, run_at)
-                VALUES
-                    (%(type)s, %(payload)s, %(priority)s, %(max_attempts)s,
-                     %(idempotency_key)s, now(), %(run_at)s)
-                RETURNING *
-                """,
-                {
-                    "type": req.type,
-                    "payload": psycopg2.extras.Json(req.payload),
-                    "priority": int(req.priority),
-                    "max_attempts": req.max_attempts,
-                    "idempotency_key": req.idempotency_key,
-                    "run_at": run_at,
-                },
-            )
-            self._conn.commit()
-            return Job.model_validate(dict(cur.fetchone()))
+        try:
+            with self._conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                cur.execute(
+                    """
+                    INSERT INTO jobs
+                        (type, payload, priority, max_attempts, idempotency_key,
+                         scheduled_at, run_at)
+                    VALUES
+                        (%(type)s, %(payload)s, %(priority)s, %(max_attempts)s,
+                         %(idempotency_key)s, now(), %(run_at)s)
+                    RETURNING *
+                    """,
+                    {
+                        "type": req.type,
+                        "payload": psycopg2.extras.Json(req.payload),
+                        "priority": int(req.priority),
+                        "max_attempts": req.max_attempts,
+                        "idempotency_key": req.idempotency_key,
+                        "run_at": run_at,
+                    },
+                )
+                self._conn.commit()
+                return Job.model_validate(dict(cur.fetchone()))
+        except Exception:
+            self._conn.rollback()
+            raise
 
     def update_status(
         self,
