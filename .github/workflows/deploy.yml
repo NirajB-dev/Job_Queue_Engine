@@ -115,7 +115,7 @@ jobs:
   # ── 3. DEPLOY API TO CLOUD RUN ──────────────────────────────────────────────
   deploy-api:
     name: Deploy API to Cloud Run
-    needs: migrate
+    needs: [build, migrate]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -140,7 +140,7 @@ jobs:
   # ── 4. DEPLOY WORKERS/SCHEDULER/WATCHDOG TO GKE ─────────────────────────────
   deploy-gke:
     name: Deploy to GKE
-    needs: migrate
+    needs: [build, migrate]
     runs-on: ubuntu-latest
     permissions:
       contents: read
