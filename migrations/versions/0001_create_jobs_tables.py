@@ -5,13 +5,13 @@ Revises:
 Create Date: 2026-05-15
 """
 
+import sqlalchemy as sa
+from alembic import op
+
 revision = "0001"
 down_revision = None
 branch_labels = None
 depends_on = None
-
-from alembic import op
-import sqlalchemy as sa
 
 
 def upgrade() -> None:
