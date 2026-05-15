@@ -84,16 +84,29 @@ jobs:
           workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
           service_account: ${{ secrets.WIF_SERVICE_ACCOUNT }}
 
-      - name: Set up Python 3.11
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-          cache: pip
+      - name: Create or update migrate Cloud Run Job
+        run: |
+          gcloud run jobs create migrate-job \
+            --image=${{ env.REGISTRY }}/api:${{ needs.build.outputs.image-tag }} \
+            --region=${{ env.REGION }} \
+            --set-cloudsql-instances=job-queue-engine:us-central1:job-queue-postgres \
+            --set-secrets=DATABASE_URL=database-url:latest \
+            --command=alembic \
+            --args=upgrade,head \
+            --service-account=${{ secrets.WIF_SERVICE_ACCOUNT }} \
+            --max-retries=1 \
+          || \
+          gcloud run jobs update migrate-job \
+            --image=${{ env.REGISTRY }}/api:${{ needs.build.outputs.image-tag }} \
+            --region=${{ env.REGION }} \
+            --set-cloudsql-instances=job-queue-engine:us-central1:job-queue-postgres \
+            --set-secrets=DATABASE_URL=database-url:latest \
+            --command=alembic \
+            --args=upgrade,head \
+            --service-account=${{ secrets.WIF_SERVICE_ACCOUNT }} \
+            --max-retries=1
 
-      - name: Install dependencies
-        run: pip install -r requirements.txt
-
-      - name: Run migrations via Cloud Run Job
+      - name: Execute migrations
         run: |
           gcloud run jobs execute migrate-job \
             --region=${{ env.REGION }} \
