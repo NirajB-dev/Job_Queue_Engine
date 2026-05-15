@@ -1,0 +1,162 @@
+name: CD — Build & Deploy to GCP
+
+on:
+  push:
+    branches:
+      - main
+
+env:
+  PROJECT_ID: job-queue-engine
+  REGION: us-central1
+  GKE_CLUSTER: job-queue-cluster
+  REGISTRY: us-central1-docker.pkg.dev/job-queue-engine/job-queue-images
+
+jobs:
+  # ── 1. BUILD & PUSH IMAGES ──────────────────────────────────────────────────
+  build:
+    name: Build & Push Docker Images
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write   # needed for Workload Identity Federation
+
+    outputs:
+      image-tag: ${{ steps.meta.outputs.tag }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Authenticate to GCP via Workload Identity
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
+          service_account: ${{ secrets.WIF_SERVICE_ACCOUNT }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev --quiet
+
+      - name: Generate image tag
+        id: meta
+        run: echo "tag=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+
+      - name: Build & push API image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: api/Dockerfile
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/api:${{ steps.meta.outputs.tag }}
+            ${{ env.REGISTRY }}/api:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build & push Worker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: worker/Dockerfile
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/worker:${{ steps.meta.outputs.tag }}
+            ${{ env.REGISTRY }}/worker:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # ── 2. RUN ALEMBIC MIGRATIONS ───────────────────────────────────────────────
+  migrate:
+    name: Run DB Migrations
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Authenticate to GCP
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
+          service_account: ${{ secrets.WIF_SERVICE_ACCOUNT }}
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run migrations via Cloud Run Job
+        run: |
+          gcloud run jobs execute migrate-job \
+            --region=${{ env.REGION }} \
+            --wait
+
+  # ── 3. DEPLOY API TO CLOUD RUN ──────────────────────────────────────────────
+  deploy-api:
+    name: Deploy API to Cloud Run
+    needs: migrate
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Authenticate to GCP
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
+          service_account: ${{ secrets.WIF_SERVICE_ACCOUNT }}
+
+      - name: Deploy to Cloud Run
+        uses: google-github-actions/deploy-cloudrun@v2
+        with:
+          service: job-queue-api
+          region: ${{ env.REGION }}
+          image: ${{ env.REGISTRY }}/api:${{ needs.build.outputs.image-tag }}
+
+  # ── 4. DEPLOY WORKERS/SCHEDULER/WATCHDOG TO GKE ─────────────────────────────
+  deploy-gke:
+    name: Deploy to GKE
+    needs: migrate
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Authenticate to GCP
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
+          service_account: ${{ secrets.WIF_SERVICE_ACCOUNT }}
+
+      - name: Get GKE credentials
+        uses: google-github-actions/get-gke-credentials@v2
+        with:
+          cluster_name: ${{ env.GKE_CLUSTER }}
+          location: ${{ env.REGION }}
+
+      - name: Update image tags in manifests
+        run: |
+          sed -i "s|IMAGE_TAG|${{ needs.build.outputs.image-tag }}|g" k8s/*.yaml
+
+      - name: Apply Kubernetes manifests
+        run: kubectl apply -f k8s/ -n job-queue
+
+      - name: Wait for rollout
+        run: |
+          kubectl rollout status deployment/worker -n job-queue --timeout=300s
+          kubectl rollout status deployment/scheduler -n job-queue --timeout=120s
+          kubectl rollout status deployment/watchdog -n job-queue --timeout=120s
