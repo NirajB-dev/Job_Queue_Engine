@@ -15,7 +15,7 @@ def _handle_sigterm(sig, frame):
 
 def main() -> None:
     signal.signal(signal.SIGTERM, _handle_sigterm)
-    logger.info("Worker started (stub — full BLPOP loop implemented in step 4)")
+    logger.info("Watchdog started (stub — heartbeat monitor implemented in step 6)")
     while _running:
         time.sleep(5)
 
