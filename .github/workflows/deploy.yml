@@ -136,6 +136,11 @@ jobs:
           service: job-queue-api
           region: ${{ env.REGION }}
           image: ${{ env.REGISTRY }}/api:${{ needs.build.outputs.image-tag }}
+          secrets: |
+            DATABASE_URL=database-url:latest
+            API_KEY=api-key:latest
+            REDIS_HOST=redis-host:latest
+          flags: --add-cloudsql-instances=job-queue-engine:us-central1:job-queue-postgres
 
   # ── 4. DEPLOY WORKERS/SCHEDULER/WATCHDOG TO GKE ─────────────────────────────
   deploy-gke:
