@@ -1,0 +1,105 @@
+services:
+
+  # ── Infrastructure ────────────────────────────────────────────────────────────
+
+  postgres:
+    image: postgres:15
+    environment:
+      POSTGRES_DB: jobqueue
+      POSTGRES_USER: jobqueue_user
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-localpass}
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U jobqueue_user -d jobqueue"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # ── One-shot: run Alembic migrations before any app service starts ─────────────
+
+  migrate:
+    build:
+      context: .
+      dockerfile: api/Dockerfile
+    command: ["alembic", "upgrade", "head"]
+    environment:
+      DATABASE_URL: postgresql://jobqueue_user:${POSTGRES_PASSWORD:-localpass}@postgres/jobqueue
+      API_KEY: unused   # required by Settings but not used during migration
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # ── Application ───────────────────────────────────────────────────────────────
+
+  api:
+    build:
+      context: .
+      dockerfile: api/Dockerfile
+    ports:
+      - "8080:8080"
+    environment:
+      DATABASE_URL: postgresql://jobqueue_user:${POSTGRES_PASSWORD:-localpass}@postgres/jobqueue
+      REDIS_HOST: redis
+      API_KEY: ${API_KEY:-local-dev-key}
+      ENVIRONMENT: development
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+
+  worker:
+    build:
+      context: .
+      dockerfile: worker/Dockerfile
+    environment:
+      DATABASE_URL: postgresql://jobqueue_user:${POSTGRES_PASSWORD:-localpass}@postgres/jobqueue
+      REDIS_HOST: redis
+      API_KEY: ${API_KEY:-local-dev-key}
+      ENVIRONMENT: development
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    deploy:
+      replicas: 2
+
+  scheduler:
+    build:
+      context: .
+      dockerfile: worker/Dockerfile
+    command: ["python", "-m", "scheduler.scheduler"]
+    environment:
+      DATABASE_URL: postgresql://jobqueue_user:${POSTGRES_PASSWORD:-localpass}@postgres/jobqueue
+      REDIS_HOST: redis
+      API_KEY: ${API_KEY:-local-dev-key}
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  watchdog:
+    build:
+      context: .
+      dockerfile: worker/Dockerfile
+    command: ["python", "-m", "watchdog.watchdog"]
+    environment:
+      DATABASE_URL: postgresql://jobqueue_user:${POSTGRES_PASSWORD:-localpass}@postgres/jobqueue
+      REDIS_HOST: redis
+      API_KEY: ${API_KEY:-local-dev-key}
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
