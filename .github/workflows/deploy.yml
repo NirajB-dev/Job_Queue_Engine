@@ -140,7 +140,9 @@ jobs:
             DATABASE_URL=database-url:latest
             API_KEY=api-key:latest
             REDIS_HOST=redis-host:latest
-          flags: --add-cloudsql-instances=job-queue-engine:us-central1:job-queue-postgres
+          flags: >-
+            --add-cloudsql-instances=job-queue-engine:us-central1:job-queue-postgres
+            --service-account=job-queue-sa@job-queue-engine.iam.gserviceaccount.com
 
   # ── 4. DEPLOY WORKERS/SCHEDULER/WATCHDOG TO GKE ─────────────────────────────
   deploy-gke:
