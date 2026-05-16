@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING
 import psycopg2
 import redis as redis_lib
 
+from core.metrics import JOB_DURATION, JOBS_FAILED, JOBS_PROCESSED
 from core.models import JobStatus
 from core.queue import RedisQueue
 from core.registry import HandlerRegistry
@@ -93,16 +94,20 @@ class Worker:
                 error=error,
                 worker_id=self.worker_id,
             )
+            JOBS_FAILED.labels(job_type=job.type, reason="no_handler").inc()
             return
 
         try:
             result = handler(job)
+            duration = (datetime.now(timezone.utc) - started_at).total_seconds()
             self._repo.update_status(
                 job_id,
                 JobStatus.DONE,
                 result=result if result is not None else {},
             )
-            logger.info("Job %s (%s) done", job_id, job.type)
+            JOB_DURATION.labels(job_type=job.type).observe(duration)
+            JOBS_PROCESSED.labels(job_type=job.type).inc()
+            logger.info("Job %s (%s) done in %.3fs", job_id, job.type, duration)
         except Exception as exc:
             error = str(exc)
             logger.warning(
@@ -124,6 +129,7 @@ class Worker:
                 error=error,
                 worker_id=self.worker_id,
             )
+            JOBS_FAILED.labels(job_type=job.type, reason="max_attempts").inc()
             logger.warning("Job %s dead after %d attempts", job.id, job.attempts)
         else:
             delay = backoff_seconds(job.attempts)
