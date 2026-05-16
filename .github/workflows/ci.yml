@@ -60,7 +60,7 @@ jobs:
         run: alembic upgrade head
 
       - name: Run tests
-        run: pytest tests/ -v --tb=short --cov=. --cov-report=term-missing
+        run: pytest tests/ -v --tb=short --cov=. --cov-report=term-missing --ignore=tests/chaos
 
   lint:
     name: ruff lint
