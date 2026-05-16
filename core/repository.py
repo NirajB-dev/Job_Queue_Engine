@@ -114,7 +114,7 @@ class JobRepository:
             cur.execute(
                 """
                 UPDATE jobs SET status = 'dead', completed_at = now(),
-                    attempts = attempts + 1, error = %s
+                    error = %s
                 WHERE id = %s
                 """,
                 (error, job_id),
