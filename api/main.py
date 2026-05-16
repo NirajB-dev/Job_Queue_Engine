@@ -6,7 +6,7 @@ import psycopg2
 import redis as redis_lib
 from fastapi import FastAPI
 
-from api.routers import jobs, metrics, workers
+from api.routers import jobs, metrics, prometheus_metrics, workers
 from core.config import settings
 
 
@@ -23,6 +23,7 @@ app = FastAPI(title="Job Queue Engine", lifespan=lifespan)
 app.include_router(jobs.router)
 app.include_router(workers.router)
 app.include_router(metrics.router)
+app.include_router(prometheus_metrics.router)
 
 
 @app.get("/health")

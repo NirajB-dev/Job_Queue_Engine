@@ -191,6 +191,11 @@ class JobRepository:
             )
             return [Job.model_validate(dict(r)) for r in cur.fetchall()]
 
+    def count_by_status(self) -> dict[str, int]:
+        with self._conn.cursor() as cur:
+            cur.execute("SELECT status, COUNT(*) FROM jobs GROUP BY status")
+            return {row[0]: row[1] for row in cur.fetchall()}
+
     def get_attempts(self, job_id: uuid.UUID) -> list[JobAttempt]:
         with self._conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
             cur.execute(
